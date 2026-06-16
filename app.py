@@ -47,16 +47,13 @@ CARDÁPIO = {
     }
 }
 
-# --- BANCO DE DADOS ---
+# --- BANCO DE DADOS (CORRIGIDO) ---
 def init_db():
-    # Se o banco existir, deleta para recriar com a nova estrutura
-    if os.path.exists('bolos.db'):
-        os.remove('bolos.db')
-    
     conn = sqlite3.connect('bolos.db')
     c = conn.cursor()
+    # Cria a tabela apenas se ela NÃO existir
     c.execute('''
-        CREATE TABLE encomendas (
+        CREATE TABLE IF NOT EXISTS encomendas (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             cliente TEXT,
             telefone TEXT,
@@ -121,74 +118,64 @@ def deletar_encomenda(id_pedido):
     conn.commit()
     conn.close()
 
-# Inicializa banco (recria se necessário)
+# Inicializa banco apenas uma vez
 init_db()
 
-# --- INTERFACE ---
-st.title("🎂 Vanessa Felicio Confeitaria")
-st.markdown("### Sistema de Gestão de Encomendas")
+# --- MENU LATERAL ---
+st.sidebar.title("🎂 Menu")
+menu = st.sidebar.radio("Navegar", ["📝 Nova Encomenda", " Agenda de Pedidos", "📊 Resumo"])
 
-# Menu lateral
-menu = st.sidebar.selectbox("Menu", ["📝 Nova Encomenda", "📋 Agenda de Pedidos", "📊 Resumo"])
-
-# --- NOVA ENCOMENDA ---
+# --- TELA PRINCIPAL ---
 if menu == "📝 Nova Encomenda":
-    st.header("Cadastrar Nova Encomenda")
+    st.title("📝 Cadastrar Nova Encomenda")
     
-    # Campos fora do formulário para permitir atualização em tempo real
+    # Dados do cliente
+    st.subheader("Dados do Cliente")
     col1, col2 = st.columns(2)
-    with col1:
-        cliente = st.text_input("Nome do Cliente *", key="cliente")
-        telefone = st.text_input("Telefone/WhatsApp", key="telefone")
-    with col2:
-        tipo_entrega = st.radio("Tipo de Entrega", ["Retirada", "Entrega"], key="tipo")
+    cliente = col1.text_input("Nome do Cliente *")
+    telefone = col2.text_input("Telefone/WhatsApp")
+    
+    # Tipo de entrega
+    tipo_entrega = st.radio("Tipo de Entrega", ["Retirada", "Entrega"], horizontal=True)
     
     endereco = ""
     taxa_entrega = 0.0
     if tipo_entrega == "Entrega":
-        endereco = st.text_input("📍 Endereço Completo para Entrega", key="endereco")
-        taxa_entrega = st.number_input("Taxa de Entrega (R$)", min_value=0.0, value=5.0, step=0.5, key="taxa")
+        endereco = st.text_input("📍 Endereço Completo para Entrega")
+        taxa_entrega = st.number_input("Taxa de Entrega (R$)", min_value=0.0, value=5.0, step=0.5)
     
+    # Detalhes do bolo
     st.subheader("Detalhes do Bolo")
-    
-    # Linha e Sabor com atualização em tempo real
     col3, col4 = st.columns(2)
-    with col3:
-        linha = st.selectbox("Linha", ["Tradicional", "Gourmet", "Premium"], key="linha_select")
-        # Atualiza sabores automaticamente quando muda a linha
-        sabores_disponiveis = CARDÁPIO[linha]["sabores"]
-        sabor = st.selectbox("Sabor", sabores_disponiveis, key="sabor_select")
-        
-    with col4:
-        massa = st.radio("Massa do Bolo", ["Branca", "Chocolate"], key="massa_select")
-        peso_kg = st.number_input("Peso (kg)", min_value=0.5, max_value=10.0, value=1.0, step=0.5, key="peso")
+    linha = col3.selectbox("Linha", ["Tradicional", "Gourmet", "Premium"])
+    sabores_disponiveis = CARDÁPIO[linha]["sabores"]
+    sabor = col3.selectbox("Sabor", sabores_disponiveis)
     
-    # Cálculo automático (atualiza sempre que muda algo)
+    massa = col4.radio("Massa do Bolo", ["Branca", "Chocolate"])
+    peso_kg = col4.number_input("Peso (kg)", min_value=0.5, max_value=10.0, value=1.0, step=0.5)
+    
+    # Cálculo
     valor_kg = CARDÁPIO[linha]["preco_kg"]
     valor_bolo = peso_kg * valor_kg
     valor_total = valor_bolo + taxa_entrega
     
-    # Mostra o cálculo em tempo real
-    st.metric(label="💰 Valor Total", value=f"R$ {valor_total:.2f}", 
-              delta=f"{peso_kg}kg x R$ {valor_kg:.2f}/kg + R$ {taxa_entrega:.2f} entrega")
+    st.success(f"💰 **Valor Total: R$ {valor_total:.2f}** ({peso_kg}kg x R$ {valor_kg:.2f} + R$ {taxa_entrega:.2f} entrega)")
     
+    # Data e hora
     st.subheader("Entrega/Retirada")
     col5, col6 = st.columns(2)
-    with col5:
-        data_entrega = st.date_input("Data de Entrega", key="data")
-    with col6:
-        horario_entrega = st.time_input("Horário da Entrega", key="hora")
+    data_entrega = col5.date_input("Data de Entrega")
+    horario_entrega = col6.time_input("Horário da Entrega")
     
+    # Status
     col7, col8 = st.columns(2)
-    with col7:
-        status_pagamento = st.selectbox("Pagamento", ["Pendente", "Sinal Pago", "Pago"], key="pagamento")
-    with col8:
-        status_pedido = st.selectbox("Status", ["Novo", "Em Preparo", "Pronto", "Entregue"], key="status")
+    status_pagamento = col7.selectbox("Pagamento", ["Pendente", "Sinal Pago", "Pago"])
+    status_pedido = col8.selectbox("Status", ["Novo", "Em Preparo", "Pronto", "Entregue"])
     
-    observacoes = st.text_area("Observações (ex: escrever 'Parabéns Ana', alergia, etc.)", key="obs")
+    observacoes = st.text_area("Observações")
     
-    # Botão de salvar
-    if st.button("💾 Salvar Encomenda", type="primary"):
+    # Botão salvar
+    if st.button("💾 Salvar Encomenda", type="primary", use_container_width=True):
         if cliente:
             dados = {
                 'cliente': cliente,
@@ -215,9 +202,8 @@ if menu == "📝 Nova Encomenda":
         else:
             st.error("⚠️ Por favor, preencha o nome do cliente.")
 
-# --- AGENDA DE PEDIDOS ---
 elif menu == "📋 Agenda de Pedidos":
-    st.header("📅 Agenda de Pedidos")
+    st.title("📋 Agenda de Pedidos")
     
     encomendas = listar_encomendas()
     hoje = datetime.now().date()
@@ -249,38 +235,25 @@ elif menu == "📋 Agenda de Pedidos":
                 elif dias_restantes < 0:
                     alertas.append("📅 Atrasado!")
                 
-                # Cores e ícones por status
                 if status_pedido == "Novo":
                     cor_status = "🔵"
-                    cor_fundo = "#e3f2fd"
                 elif status_pedido == "Em Preparo":
                     cor_status = "🟡"
-                    cor_fundo = "#fff9c4"
                 elif status_pedido == "Pronto":
                     cor_status = "🟢"
-                    cor_fundo = "#c8e6c9"
                 else:
-                    cor_status = "⚪"
-                    cor_fundo = "#f5f5f5"
+                    cor_status = ""
                 
                 with st.expander(f"{cor_status} {cliente} - {data_entrega} às {horario_entrega}"):
                     if alertas:
                         for alerta in alertas:
                             st.warning(alerta)
                     
-                    col_a, col_b = st.columns(2)
-                    with col_a:
-                        st.write(f"**Linha:** {linha}")
-                        st.write(f"**Sabor:** {sabor}")
-                        st.write(f"**Massa:** {massa}")
-                    with col_b:
-                        st.write(f"**Peso:** {peso_kg}kg")
-                        st.write(f"**Valor:** R$ {valor_total:.2f}")
-                        st.write(f"**Tipo:** {tipo_entrega}")
-                    
+                    st.write(f"**Linha:** {linha} | **Sabor:** {sabor}")
+                    st.write(f"**Massa:** {massa} | **Peso:** {peso_kg}kg")
+                    st.write(f"**Valor:** R$ {valor_total:.2f} ({tipo_entrega})")
                     if tipo_entrega == "Entrega" and endereco:
-                        st.info(f"📍 **Endereço:** {endereco}")
-                    
+                        st.info(f" **Endereço:** {endereco}")
                     st.write(f"**Pagamento:** {status_pagamento}")
                     if telefone:
                         st.write(f"**Telefone:** {telefone}")
@@ -289,21 +262,16 @@ elif menu == "📋 Agenda de Pedidos":
                     
                     st.divider()
                     
-                    # Atualização rápida de status
-                    col_x, col_y = st.columns([3, 1])
-                    with col_x:
-                        novo_status = st.selectbox(
-                            "Status:",
-                            ["Novo", "Em Preparo", "Pronto", "Entregue"],
-                            index=["Novo", "Em Preparo", "Pronto", "Entregue"].index(status_pedido),
-                            key=f"status_{id_pedido}",
-                            label_visibility="collapsed"
-                        )
-                    with col_y:
-                        if st.button("💾", key=f"btn_{id_pedido}"):
-                            atualizar_encomenda(id_pedido, "status_pedido", novo_status)
-                            st.success("OK!")
-                            st.rerun()
+                    novo_status = st.selectbox(
+                        "Status:",
+                        ["Novo", "Em Preparo", "Pronto", "Entregue"],
+                        index=["Novo", "Em Preparo", "Pronto", "Entregue"].index(status_pedido),
+                        key=f"status_{id_pedido}"
+                    )
+                    if st.button("💾 Atualizar", key=f"btn_{id_pedido}"):
+                        atualizar_encomenda(id_pedido, "status_pedido", novo_status)
+                        st.success("Status atualizado!")
+                        st.rerun()
                     
                     if st.button("🗑️ Excluir", key=f"del_{id_pedido}"):
                         deletar_encomenda(id_pedido)
@@ -318,9 +286,8 @@ elif menu == "📋 Agenda de Pedidos":
     else:
         st.info("Nenhuma encomenda cadastrada.")
 
-# --- RESUMO ---
 elif menu == "📊 Resumo":
-    st.header("📊 Resumo Geral")
+    st.title(" Resumo Geral")
     
     encomendas = listar_encomendas()
     
@@ -329,7 +296,6 @@ elif menu == "📊 Resumo":
         pendentes = len([e for e in encomendas if e[15] != "Entregue"])
         entregues = len([e for e in encomendas if e[15] == "Entregue"])
         faturamento = sum([e[10] for e in encomendas if e[15] != "Entregue"])
-        faturamento_pago = sum([e[10] for e in encomendas if e[14] == "Pago"])
         
         col1, col2, col3 = st.columns(3)
         col1.metric("Total Pedidos", total_pedidos)
@@ -337,9 +303,6 @@ elif menu == "📊 Resumo":
         col3.metric("Entregues", entregues)
         
         st.divider()
-        
-        col4, col5 = st.columns(2)
-        col4.metric("Faturamento Pendente", f"R$ {faturamento:.2f}")
-        col5.metric("Já Pago", f"R$ {faturamento_pago:.2f}")
+        st.metric("Faturamento Pendente", f"R$ {faturamento:.2f}")
     else:
         st.info("Sem dados.")
