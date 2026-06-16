@@ -1,42 +1,112 @@
 import streamlit as st
 import sqlite3
+from datetime import datetime, timedelta
 
 # Configuração da página
-st.set_page_config(page_title="Encomendas de Bolos", page_icon="🎂", layout="centered")
+st.set_page_config(page_title="Vanessa Felicio Confeitaria", page_icon="🎂", layout="centered")
 
-# --- 1. Funções do Banco de Dados ---
+# --- CARDÁPIO COMPLETO ---
+CARDÁPIO = {
+    "Tradicional": {
+        "preco_kg": 65,
+        "sabores": [
+            "Brigadeiro Chocolate ao Leite",
+            "Brigadeiro Branco",
+            "Brigadeiro Meio Amargo",
+            "Dois Amores",
+            "Prestígio"
+        ]
+    },
+    "Gourmet": {
+        "preco_kg": 75,
+        "sabores": [
+            "Abacaxi",
+            "Maracujá com Leite Ninho",
+            "Maracujá com Chocolate ao Leite",
+            "Doce de Leite com Ameixa",
+            "Ninho com Geleia de Morango",
+            "4 Leites"
+        ]
+    },
+    "Premium": {
+        "preco_kg": 85,
+        "sabores": [
+            "Doce de Leite com Nozes",
+            "Ninho com Nutella",
+            "Floresta Negra",
+            "Kit Kat",
+            "Kinder Bueno",
+            "Oreo",
+            "Pudim (mínimo 5kg)",
+            "Sensação",
+            "Mil Folhas",
+            "Brownie com Nutella, Ninho e Ouro Branco",
+            "Mousse de Ninho com Morango e Suspiro"
+        ]
+    }
+}
+
+# --- BANCO DE DADOS ---
 def init_db():
     conn = sqlite3.connect('bolos.db')
     c = conn.cursor()
     c.execute('''
         CREATE TABLE IF NOT EXISTS encomendas (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            cliente TEXT, sabor TEXT, recheio TEXT, tamanho TEXT,
-            data_entrega TEXT, valor REAL, status_pagamento TEXT,
-            status_pedido TEXT, observacoes TEXT
+            cliente TEXT,
+            telefone TEXT,
+            linha TEXT,
+            sabor TEXT,
+            massa TEXT,
+            peso_kg REAL,
+            valor_kg REAL,
+            taxa_entrega REAL,
+            valor_total REAL,
+            data_entrega TEXT,
+            horario_entrega TEXT,
+            tipo_entrega TEXT,
+            status_pagamento TEXT,
+            status_pedido TEXT,
+            observacoes TEXT,
+            alerta_3dias INTEGER DEFAULT 0,
+            alerta_2dias INTEGER DEFAULT 0,
+            alerta_1dia INTEGER DEFAULT 0
         )
     ''')
     conn.commit()
     conn.close()
 
-def salvar_encomenda(cliente, sabor, recheio, tamanho, data_entrega, valor, status_pagamento, status_pedido, observacoes):
+def salvar_encomenda(dados):
     conn = sqlite3.connect('bolos.db')
     c = conn.cursor()
     c.execute('''
-        INSERT INTO encomendas (cliente, sabor, recheio, tamanho, data_entrega, valor, status_pagamento, status_pedido, observacoes)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (cliente, sabor, recheio, tamanho, data_entrega, valor, status_pagamento, status_pedido, observacoes))
+        INSERT INTO encomendas 
+        (cliente, telefone, linha, sabor, massa, peso_kg, valor_kg, taxa_entrega, 
+         valor_total, data_entrega, horario_entrega, tipo_entrega, status_pagamento, 
+         status_pedido, observacoes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (dados['cliente'], dados['telefone'], dados['linha'], dados['sabor'], 
+          dados['massa'], dados['peso_kg'], dados['valor_kg'], dados['taxa_entrega'],
+          dados['valor_total'], dados['data_entrega'], dados['horario_entrega'],
+          dados['tipo_entrega'], dados['status_pagamento'], dados['status_pedido'],
+          dados['observacoes']))
     conn.commit()
     conn.close()
 
 def listar_encomendas():
     conn = sqlite3.connect('bolos.db')
     c = conn.cursor()
-    # Ordena pela data de entrega (as mais próximas aparecem primeiro)
-    c.execute('SELECT * FROM encomendas ORDER BY data_entrega ASC')
+    c.execute('SELECT * FROM encomendas ORDER BY data_entrega ASC, horario_entrega ASC')
     encomendas = c.fetchall()
     conn.close()
     return encomendas
+
+def atualizar_encomenda(id_pedido, campo, valor):
+    conn = sqlite3.connect('bolos.db')
+    c = conn.cursor()
+    c.execute(f'UPDATE encomendas SET {campo} = ? WHERE id = ?', (valor, id_pedido))
+    conn.commit()
+    conn.close()
 
 def deletar_encomenda(id_pedido):
     conn = sqlite3.connect('bolos.db')
@@ -45,84 +115,193 @@ def deletar_encomenda(id_pedido):
     conn.commit()
     conn.close()
 
-def atualizar_status(id_pedido, novo_status):
-    conn = sqlite3.connect('bolos.db')
-    c = conn.cursor()
-    c.execute('UPDATE encomendas SET status_pedido = ? WHERE id = ?', (novo_status, id_pedido))
-    conn.commit()
-    conn.close()
-
-# Inicia o banco de dados
+# Inicializa banco
 init_db()
 
-# --- 2. Interface do App (Com Abas) ---
-st.title("🎂 Gestão de Encomendas")
+# --- INTERFACE ---
+st.title("🎂 Vanessa Felicio Confeitaria")
+st.markdown("### Sistema de Gestão de Encomendas")
 
-# Cria as duas abas no topo
-tab1, tab2 = st.tabs(["📝 Novo Pedido", "📋 Meus Pedidos"])
+# Menu lateral
+menu = st.sidebar.selectbox("Menu", ["📝 Nova Encomenda", "📋 Agenda de Pedidos", "📊 Resumo"])
 
-# --- ABA 1: Cadastrar ---
-with tab1:
-    st.subheader("Cadastrar Nova Encomenda")
+# --- NOVA ENCOMENDA ---
+if menu == "📝 Nova Encomenda":
+    st.header("Cadastrar Nova Encomenda")
+    
     with st.form("nova_encomenda"):
-        cliente = st.text_input("Nome do Cliente *")
-        sabor = st.text_input("Sabor do Bolo")
-        recheio = st.text_input("Recheio")
-        tamanho = st.text_input("Tamanho (ex: 2kg, 20 fatias)")
-        data_entrega = st.date_input("Data de Entrega")
-        valor = st.number_input("Valor Total (R$)", min_value=0.0, format="%.2f")
-        status_pagamento = st.selectbox("Status do Pagamento", ["Pendente", "Sinal Pago", "Pago"])
-        status_pedido = st.selectbox("Status do Pedido", ["Novo", "Em Preparo", "Pronto", "Entregue"])
-        observacoes = st.text_area("Observações (ex: escrever 'Parabéns Ana')")
+        col1, col2 = st.columns(2)
+        with col1:
+            cliente = st.text_input("Nome do Cliente *")
+            telefone = st.text_input("Telefone/WhatsApp")
+        with col2:
+            tipo_entrega = st.radio("Tipo de Entrega", ["Retirada", "Entrega"])
+            if tipo_entrega == "Entrega":
+                taxa_entrega = st.number_input("Taxa de Entrega (R$)", min_value=0.0, value=5.0, step=0.5)
+            else:
+                taxa_entrega = 0.0
+        
+        st.subheader("Detalhes do Bolo")
+        col3, col4 = st.columns(2)
+        with col3:
+            linha = st.selectbox("Linha", ["Tradicional", "Gourmet", "Premium"])
+            sabor = st.selectbox("Sabor", CARDÁPIO[linha]["sabores"])
+        with col4:
+            massa = st.radio("Massa do Bolo", ["Branca", "Chocolate"])
+            peso_kg = st.number_input("Peso (kg)", min_value=0.5, max_value=10.0, value=1.0, step=0.5)
+        
+        # Cálculo automático do valor
+        valor_kg = CARDÁPIO[linha]["preco_kg"]
+        valor_bolo = peso_kg * valor_kg
+        valor_total = valor_bolo + taxa_entrega
+        
+        st.info(f"💰 **Valor do kg:** R$ {valor_kg:.2f} | **Subtotal bolo:** R$ {valor_bolo:.2f} | **Total com entrega:** R$ {valor_total:.2f}")
+        
+        st.subheader("Entrega")
+        col5, col6 = st.columns(2)
+        with col5:
+            data_entrega = st.date_input("Data de Entrega")
+        with col6:
+            horario_entrega = st.time_input("Horário da Entrega")
+        
+        col7, col8 = st.columns(2)
+        with col7:
+            status_pagamento = st.selectbox("Pagamento", ["Pendente", "Sinal Pago", "Pago"])
+        with col8:
+            status_pedido = st.selectbox("Status", ["Novo", "Em Preparo", "Pronto", "Entregue"])
+        
+        observacoes = st.text_area("Observações (ex: escrever 'Parabéns Ana', alergia, etc.)")
         
         submitted = st.form_submit_button("💾 Salvar Encomenda")
         
         if submitted:
             if cliente:
-                salvar_encomenda(cliente, sabor, recheio, tamanho, data_entrega, valor, status_pagamento, status_pedido, observacoes)
+                dados = {
+                    'cliente': cliente,
+                    'telefone': telefone,
+                    'linha': linha,
+                    'sabor': sabor,
+                    'massa': massa,
+                    'peso_kg': peso_kg,
+                    'valor_kg': valor_kg,
+                    'taxa_entrega': taxa_entrega,
+                    'valor_total': valor_total,
+                    'data_entrega': data_entrega.strftime("%d/%m/%Y"),
+                    'horario_entrega': horario_entrega.strftime("%H:%M"),
+                    'tipo_entrega': tipo_entrega,
+                    'status_pagamento': status_pagamento,
+                    'status_pedido': status_pedido,
+                    'observacoes': observacoes
+                }
+                salvar_encomenda(dados)
                 st.success(f"✅ Encomenda de {cliente} salva com sucesso!")
-                st.rerun() # Atualiza a tela automaticamente
+                st.rerun()
             else:
                 st.error("⚠️ Por favor, preencha o nome do cliente.")
 
-# --- ABA 2: Ver e Gerenciar ---
-with tab2:
-    st.subheader("📋 Encomendas Cadastradas")
+# --- AGENDA DE PEDIDOS ---
+elif menu == "📋 Agenda de Pedidos":
+    st.header("📅 Agenda de Pedidos")
+    
+    encomendas = listar_encomendas()
+    hoje = datetime.now().date()
+    
+    if encomendas:
+        # Filtra pedidos pendentes (não entregues)
+        pendentes = [e for e in encomendas if e[14] != "Entregue"]
+        entregues = [e for e in encomendas if e[14] == "Entregue"]
+        
+        if pendentes:
+            st.subheader("🔴 Pedidos Pendentes")
+            for encomenda in pendentes:
+                id_pedido, cliente, telefone, linha, sabor, massa, peso_kg, valor_kg, taxa_entrega, valor_total, data_entrega, horario_entrega, tipo_entrega, status_pagamento, status_pedido, observacoes, a3, a2, a1 = encomenda
+                
+                # Converte data para comparação
+                data_obj = datetime.strptime(data_entrega, "%d/%m/%Y").date()
+                dias_restantes = (data_obj - hoje).days
+                
+                # Alertas
+                alertas = []
+                if dias_restantes == 3 and a3 == 0:
+                    alertas.append("⚠️ Faltam 3 dias!")
+                    atualizar_encomenda(id_pedido, "alerta_3dias", 1)
+                elif dias_restantes == 2 and a2 == 0:
+                    alertas.append("⚠️ Faltam 2 dias!")
+                    atualizar_encomenda(id_pedido, "alerta_2dias", 1)
+                elif dias_restantes == 1 and a1 == 0:
+                    alertas.append("🚨 Faltam 1 dia!")
+                    atualizar_encomenda(id_pedido, "alerta_1dia", 1)
+                elif dias_restantes == 0:
+                    alertas.append("🔥 ENTREGA HOJE!")
+                
+                # Cores por status
+                if status_pedido == "Novo":
+                    cor_status = "🔵"
+                elif status_pedido == "Em Preparo":
+                    cor_status = "🟡"
+                elif status_pedido == "Pronto":
+                    cor_status = "🟢"
+                else:
+                    cor_status = "⚪"
+                
+                with st.expander(f"{cor_status} {cliente} - {data_entrega} às {horario_entrega}"):
+                    if alertas:
+                        for alerta in alertas:
+                            st.warning(alerta)
+                    
+                    st.write(f"**Linha:** {linha} | **Sabor:** {sabor}")
+                    st.write(f"**Massa:** {massa} | **Peso:** {peso_kg}kg")
+                    st.write(f"**Valor:** R$ {valor_total:.2f} ({tipo_entrega})")
+                    st.write(f"**Pagamento:** {status_pagamento}")
+                    if telefone:
+                        st.write(f"**Telefone:** {telefone}")
+                    if observacoes:
+                        st.write(f"**Obs:** {observacoes}")
+                    
+                    st.divider()
+                    
+                    # Atualização rápida de status
+                    novo_status = st.selectbox(
+                        "Alterar Status:",
+                        ["Novo", "Em Preparo", "Pronto", "Entregue"],
+                        index=["Novo", "Em Preparo", "Pronto", "Entregue"].index(status_pedido),
+                        key=f"status_{id_pedido}"
+                    )
+                    if novo_status != status_pedido:
+                        if st.button("Salvar Status", key=f"btn_{id_pedido}"):
+                            atualizar_encomenda(id_pedido, "status_pedido", novo_status)
+                            st.success("Status atualizado!")
+                            st.rerun()
+                    
+                    if st.button("🗑️ Excluir", key=f"del_{id_pedido}"):
+                        deletar_encomenda(id_pedido)
+                        st.success("Excluído!")
+                        st.rerun()
+        
+        if entregues:
+            with st.expander("📦 Pedidos Entregues (clique para ver)"):
+                for encomenda in entregues:
+                    id_pedido, cliente, telefone, linha, sabor, massa, peso_kg, valor_kg, taxa_entrega, valor_total, data_entrega, horario_entrega, tipo_entrega, status_pagamento, status_pedido, observacoes, a3, a2, a1 = encomenda
+                    st.write(f"✅ {cliente} - {data_entrega} - R$ {valor_total:.2f}")
+    else:
+        st.info("Nenhuma encomenda cadastrada.")
+
+# --- RESUMO ---
+elif menu == "📊 Resumo":
+    st.header("📊 Resumo da Semana")
+    
     encomendas = listar_encomendas()
     
     if encomendas:
-        for encomenda in encomendas:
-            id_pedido, cliente, sabor, recheio, tamanho, data_entrega, valor, status_pagamento, status_pedido, observacoes = encomenda
-            
-            # Cria um cartão expansível para cada pedido
-            with st.expander(f"🎂 {cliente} - Entrega: {data_entrega}"):
-                st.write(f"**Sabor:** {sabor} | **Recheio:** {recheio}")
-                st.write(f"**Tamanho:** {tamanho} | **Valor:** R$ {valor:.2f}")
-                st.write(f"**Pagamento:** {status_pagamento}")
-                if observacoes:
-                    st.write(f"** Obs:** {observacoes}")
-                
-                st.divider()
-                
-                # Botão para mudar o status
-                novo_status = st.selectbox(
-                    "Alterar Status:",
-                    ["Novo", "Em Preparo", "Pronto", "Entregue"],
-                    index=["Novo", "Em Preparo", "Pronto", "Entregue"].index(status_pedido),
-                    key=f"status_{id_pedido}"
-                )
-                if novo_status != status_pedido:
-                    if st.button("Salvar Novo Status", key=f"btn_status_{id_pedido}"):
-                        atualizar_status(id_pedido, novo_status)
-                        st.success("Status atualizado!")
-                        st.rerun()
-                
-                st.divider()
-                
-                # Botão para excluir
-                if st.button("🗑️ Excluir Encomenda", key=f"btn_del_{id_pedido}"):
-                    deletar_encomenda(id_pedido)
-                    st.success("Encomenda excluída!")
-                    st.rerun()
+        total_pedidos = len(encomendas)
+        pendentes = len([e for e in encomendas if e[14] != "Entregue"])
+        entregues = len([e for e in encomendas if e[14] == "Entregue"])
+        faturamento = sum([e[9] for e in encomendas if e[14] != "Entregue"])
+        
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Total Pedidos", total_pedidos)
+        col2.metric("Pendentes", pendentes)
+        col3.metric("Entregues", entregues)
+        col4.metric("Faturamento Pendente", f"R$ {faturamento:.2f}")
     else:
-        st.info("Nenhuma encomenda cadastrada ainda.")
+        st.info("Sem dados.")
